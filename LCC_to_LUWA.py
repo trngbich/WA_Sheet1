@@ -14,7 +14,7 @@ import ogr
 import gdal
 import tempfile
 
-def Rasterize_shapefile(fh, fh_ex,fh_out):
+def Rasterize_shapefile(shapefile, examplefile,fh_out):
     """
     Rasterize a shapefile given an example tiff raster to get the pixelsizes and transformation info.
     
@@ -28,10 +28,6 @@ def Rasterize_shapefile(fh, fh_ex,fh_out):
         Filehandle for output.
         
     """
-
-    shapefile = fh
-    examplefile = fh_ex
-    
     
     # Create temporary tif-file.
     temp_file = tempfile.NamedTemporaryFile(suffix='.tif').name
@@ -49,36 +45,18 @@ def Rasterize_shapefile(fh, fh_ex,fh_out):
                                cropToCutline = False,
                                dstNodata = -9999,
                                )
-    print(options)
+    
     sourceds = gdal.Warp(temp_file, examplefile, options = options)
+    
     if not sourceds:
         raise IOError("a problem in gdal.Warp '%s'"%shapefile)
-    
-    geot    = sourceds.GetGeoTransform()
-    xsize   = sourceds.RasterXSize # columns
-    ysize   = sourceds.RasterYSize # rows
-    
-    
-    minX = geot[0]
-    minY = geot[3] + ysize * geot[5]
-    maxX = geot[0] + xsize * geot[1]
-    maxY = geot[3]
-    
-    
-    optionsProj = gdal.WarpOptions(
-                               outputBounds = (minX, minY, maxX, maxY),
-                               width = xsize,
-                               height = ysize,
-                               dstNodata = -9999,
-                               options = ["GDALWARP_IGNORE_BAD_CUTLINE YES"],
-                               )
-    
-    temp_fileP = tempfile.NamedTemporaryFile(suffix='.tif').name
-    gdal.Warp(temp_fileP, temp_file, options = optionsProj)
-    sourceds=gdal.Warp( fh_out,temp_fileP, options = optionsProj)
-    sourceds=None
+    data= gis.OpenAsArray(temp_file,nan_values=True)
+    data[data>0]=1
+    data[data<0]=np.nan
+    driver,NDV,xsize,ysize,GeoT, Projection=gis.GetGeoInfo(examplefile)
+    gis.CreateGeoTiff(fh_out,data,driver,NDV,xsize,ysize,GeoT, Projection)
+    del data
     os.remove(temp_file)
-    os.remove(temp_fileP)
 
    
 def Adjust_GRaND_reservoir(output_raster,WaPOR_LCC,GRaND_Reservoir,
