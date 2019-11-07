@@ -10,7 +10,26 @@ WAPOR LCC to LUWA
 from WaPOR import GIS_functions as gis
 import numpy as np
 import os
-from WA.rasterize_shapefile import Rasterize_shapefile
+import ogr 
+import osr
+import subprocess
+
+
+def Rasterize_shapefile(InputVector,OutputRaster,latlim,lonlim,xRes,yRes,
+                        burnVal=1.0,layer=0,dataType='Float32',NDV=-9999.0):
+    srs=osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    a_srs=srs.ExportToWkt()
+    dts=ogr.Open(InputVector)
+    layer=dts.GetLayer(layer)
+    layername=layer.GetDescription()
+    extent='{0} {1} {2} {3}'.format(lonlim[0],latlim[0],lonlim[1],latlim[1])    
+    string='gdal_rasterize -l {0} -burn {1} -tr {2} {3} -a_nodata {4} -a_srs {5} -te {6} -ot {7} -of GTiff {8} {9}'.format(layername,
+                               burnVal,xRes,yRes,NDV,a_srs,extent,dataType,InputVector,OutputRaster)
+    proc = subprocess.Popen(string, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = proc.communicate()
+    return out, err
+
 
 def Rasterize_shape_basin(shapefile,raster_template,output_raster):
 
