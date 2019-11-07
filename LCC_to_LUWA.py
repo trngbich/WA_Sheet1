@@ -7,7 +7,7 @@ WAPOR LCC to LUWA
 """
 #os.chdir(r'D:\FAO\WA_Sheet1\WAPORWA') 
 
-from WaPOR import GIS_functions as gis
+import WaporIHE.download.GIS_functions as gis
 import numpy as np
 import os
 import ogr 
