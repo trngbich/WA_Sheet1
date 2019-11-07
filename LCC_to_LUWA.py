@@ -12,51 +12,36 @@ import numpy as np
 import os
 import ogr 
 import gdal
-import tempfile
 
-def Rasterize_shapefile(shapefile, examplefile,fh_out):
-    """
-    Rasterize a shapefile given an example tiff raster to get the pixelsizes and transformation info.
+
+def Rasterize_shapefile(InputVector, RefImage, OutputImage):
+    gdalformat = 'GTiff'
+    datatype = gdal.GDT_Byte
+    burnVal = 1 #value for the output image pixels
     
-    Parameters
-    ----------
-    fh : str
-        Filehandle to file to the shapefile to be rasterized.
-    fh_eg : str
-        Filehandle to file to the tiff raster example file.
-    fh_out : str
-        Filehandle for output.
-        
-    """
+    # Get projection info from reference image
+    Image = gdal.Open(RefImage, gdal.GA_ReadOnly)
     
-    # Create temporary tif-file.
-    temp_file = tempfile.NamedTemporaryFile(suffix='.tif').name
+    # Open Shapefile
+    Shapefile = ogr.Open(InputVector)
+    Shapefile_layer = Shapefile.GetLayer()
     
-    inDriver = ogr.GetDriverByName("ESRI Shapefile")
-    inDataSource = inDriver.Open(shapefile, 1)
+    # Rasterise
+    #print("Rasterising shapefile...")
+    Output = gdal.GetDriverByName(gdalformat).Create(OutputImage, Image.RasterXSize, Image.RasterYSize, 1, datatype, options=['COMPRESS=DEFLATE'])
+    Output.SetProjection(Image.GetProjectionRef())
+    Output.SetGeoTransform(Image.GetGeoTransform()) 
     
-    if not inDataSource:
-        raise IOError("Could not open '%s'"%shapefile)
+    # Write data to band 1
+    Band = Output.GetRasterBand(1)
+    Band.SetNoDataValue(0)
+    gdal.RasterizeLayer(Output, [1], Shapefile_layer, burn_values=[burnVal])
     
-    inLayer = inDataSource.GetLayer()
-    
-    options = gdal.WarpOptions(cutlineDSName = shapefile,
-                               cutlineLayer = inLayer.GetName(),
-                               cropToCutline = False,
-                               dstNodata = -9999,
-                               )
-    
-    sourceds = gdal.Warp(temp_file, examplefile, options = options)
-    
-    if not sourceds:
-        raise IOError("a problem in gdal.Warp '%s'"%shapefile)
-    data= gis.OpenAsArray(temp_file,nan_values=True)
-    data[data>0]=1
-    data[data<0]=np.nan
-    driver,NDV,xsize,ysize,GeoT, Projection=gis.GetGeoInfo(examplefile)
-    gis.CreateGeoTiff(fh_out,data,driver,NDV,xsize,ysize,GeoT, Projection)
-    del data
-    os.remove(temp_file)
+    # Close datasets
+    Band = None
+    Output = None
+    Image = None
+    Shapefile = None
 
    
 def Adjust_GRaND_reservoir(output_raster,WaPOR_LCC,GRaND_Reservoir,
