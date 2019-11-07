@@ -11,53 +11,88 @@ import WaporIHE.download.GIS_functions as gis
 import numpy as np
 import os
 import ogr 
-import osr
-import subprocess
+import gdal
+import tempfile
 
-
-def Rasterize_shapefile(InputVector,OutputRaster,latlim,lonlim,xRes,yRes,
-                        burnVal=1.0,layer=0,dataType='Float32',NDV=-9999.0):
-    srs=osr.SpatialReference()
-    srs.ImportFromEPSG(4326)
-    a_srs=srs.ExportToWkt()
-    dts=ogr.Open(InputVector)
-    layer=dts.GetLayer(layer)
-    layername=layer.GetDescription()
-    extent='{0} {1} {2} {3}'.format(lonlim[0],latlim[0],lonlim[1],latlim[1])    
-    string='gdal_rasterize -l {0} -burn {1} -tr {2} {3} -a_nodata {4} -a_srs {5} -te {6} -ot {7} -of GTiff {8} {9}'.format(layername,
-                               burnVal,xRes,yRes,NDV,a_srs,extent,dataType,InputVector,OutputRaster)
-    proc = subprocess.Popen(string, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
-    return out, err
-
-
-def Rasterize_shape_basin(shapefile,raster_template,output_raster):
-
-    driver,NDV,xsize,ysize,GeoT,Projection=gis.GetGeoInfo(raster_template)
-    latlim=[GeoT[3]+ysize*GeoT[5],GeoT[3]]
-    lonlim=[GeoT[0],GeoT[0]+xsize*GeoT[1]]
-    xRes=GeoT[1]
-    yRes=-GeoT[5]    
-    Rasterize_shapefile(shapefile,output_raster,latlim,lonlim,xRes,yRes)
+def Rasterize_shapefile(fh, fh_ex,fh_out):
+    """
+    Rasterize a shapefile given an example tiff raster to get the pixelsizes and transformation info.
     
+    Parameters
+    ----------
+    fh : str
+        Filehandle to file to the shapefile to be rasterized.
+    fh_eg : str
+        Filehandle to file to the tiff raster example file.
+    fh_out : str
+        Filehandle for output.
+        
+    """
+
+    shapefile = fh
+    examplefile = fh_ex
+    
+    
+    # Create temporary tif-file.
+    temp_file = tempfile.NamedTemporaryFile(suffix='.tif').name
+    
+    inDriver = ogr.GetDriverByName("ESRI Shapefile")
+    inDataSource = inDriver.Open(shapefile, 1)
+    
+    if not inDataSource:
+        raise IOError("Could not open '%s'"%shapefile)
+    
+    inLayer = inDataSource.GetLayer()
+    
+    options = gdal.WarpOptions(cutlineDSName = shapefile,
+                               cutlineLayer = inLayer.GetName(),
+                               cropToCutline = False,
+                               dstNodata = -9999,
+                               )
+    print(options)
+    sourceds = gdal.Warp(temp_file, examplefile, options = options)
+    if not sourceds:
+        raise IOError("a problem in gdal.Warp '%s'"%shapefile)
+    
+    geot    = sourceds.GetGeoTransform()
+    xsize   = sourceds.RasterXSize # columns
+    ysize   = sourceds.RasterYSize # rows
+    
+    
+    minX = geot[0]
+    minY = geot[3] + ysize * geot[5]
+    maxX = geot[0] + xsize * geot[1]
+    maxY = geot[3]
+    
+    
+    optionsProj = gdal.WarpOptions(
+                               outputBounds = (minX, minY, maxX, maxY),
+                               width = xsize,
+                               height = ysize,
+                               dstNodata = -9999,
+                               options = ["GDALWARP_IGNORE_BAD_CUTLINE YES"],
+                               )
+    
+    temp_fileP = tempfile.NamedTemporaryFile(suffix='.tif').name
+    gdal.Warp(temp_fileP, temp_file, options = optionsProj)
+    sourceds=gdal.Warp( fh_out,temp_fileP, options = optionsProj)
+    sourceds=None
+    os.remove(temp_file)
+    os.remove(temp_fileP)
+
+   
 def Adjust_GRaND_reservoir(output_raster,WaPOR_LCC,GRaND_Reservoir,
                            Resrv_to_Lake,Lake_to_Reserv):   
   
      #Getting GeoTranformation from LCC map
     driver,NDV,xsize,ysize,GeoT,Projection=gis.GetGeoInfo(WaPOR_LCC)
-    latlim=[GeoT[3]+ysize*GeoT[5],GeoT[3]]
-    lonlim=[GeoT[0],GeoT[0]+xsize*GeoT[1]]
-    xRes=GeoT[1]
-    yRes=-GeoT[5]
     #Rasterize selected area for reservoir and un-reservoir shapefile
     Basin_reservoir=os.path.join(os.path.split(Resrv_to_Lake)[0],'Reservoir_GRanD.tif')
-    Rasterize_shapefile(GRaND_Reservoir,Basin_reservoir,
-                                latlim,lonlim,xRes,yRes)
-    Rasterize_shapefile(Resrv_to_Lake,Resrv_to_Lake.replace('.shp','.tif'),
-                                latlim,lonlim,xRes,yRes)
-    
-    Rasterize_shapefile(Lake_to_Reserv,Lake_to_Reserv.replace('.shp','.tif'),
-                                latlim,lonlim,xRes,yRes)
+    Rasterize_shapefile(GRaND_Reservoir,WaPOR_LCC,Basin_reservoir)    
+    Rasterize_shapefile(Resrv_to_Lake,WaPOR_LCC,
+                        Resrv_to_Lake.replace('.shp','.tif'))    
+    Rasterize_shapefile(Lake_to_Reserv,WaPOR_LCC,
+                        Lake_to_Reserv.replace('.shp','.tif'))
     
     #Edit Resvr
     Resrv=gis.OpenAsArray(Basin_reservoir,nan_values=True)
