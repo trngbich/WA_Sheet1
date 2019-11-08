@@ -9,6 +9,7 @@ import numpy as np
 import gdal
 import xarray as xr
 import glob
+import datetime
 
 #%% functions
 def open_nc(nc,timechunk=1,chunksize=1000):
@@ -238,6 +239,8 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     cf =  20 #f_Ssat soil mositure correction factor to componsate the variation in filling up and drying in a month
  
     '''
+    start_time=datetime.datetime.now()
+    
     Pt,_=open_nc(p_in,chunksize=1000)
     E,_=open_nc(e_in,chunksize=1000)
     Int,_=open_nc(i_in,chunksize=1000)
@@ -358,10 +361,12 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
         
         del etg
         del etb
-        print('Model finished')
+
+        elapsed_time=datetime.datetime.now()-start_time
+        print('Model finished in ',elapsed_time)
         print('ETincr folder: ',etincr_outfolder)
         print('ETrain folder: ',etrain_outfolder)
-        return 
+    
         
 def merge_yearly_nc(nc_folder,out_nc,varname=None):    
     fhs=glob.glob(os.path.join(nc_folder,'*.nc'))
