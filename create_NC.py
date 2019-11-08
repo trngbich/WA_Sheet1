@@ -81,7 +81,7 @@ def find_date(fh):
         options = (date,[iyear, iyear+4], [imonth, imonth+2],[imonth+3, imonth+5]) 
     return options
 
-def main(nc_fn,basin,dataset,template,cutline,step='month',**kwargs):
+def make_netcdf(nc_fn,basin,dataset,template,cutline,step='month',**kwargs):
     '''
     filename: str
         output netCDF file name
