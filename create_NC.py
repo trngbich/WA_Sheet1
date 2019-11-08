@@ -98,7 +98,7 @@ def make_netcdf(nc_fn,basin,dataset,template,cutline,step='month',**kwargs):
         pandas DatetimeIndex range
     '''
     dims = {'time':  None, 'latitude': None, 'longitude': None}
-    dims['latitude'], dims['longitude'], optionsProj, optionsClip = _get_lats_lons(template, cutline)
+    dims['latitude'], dims['longitude'], optionsProj, optionsClip = get_lats_lons(template, cutline)
     _init_nc(nc_fn, dims, dataset, attr = {"basin_name" : basin})
     overview=_make_overview(dataset, step)
     succes = _fill_data_to_nc(nc_fn, overview, optionsProj, optionsClip, cutline)
@@ -136,7 +136,7 @@ def _init_nc(nc_file, dim, var, fill = -9999., attr = None):
     # Close nc-file.
     out_nc.close()
     
-def _get_lats_lons(example, shape):
+def get_lats_lons(example, shape):
    
     gdal.UseExceptions()
     
