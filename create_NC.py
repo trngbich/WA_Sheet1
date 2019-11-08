@@ -81,61 +81,6 @@ def find_date(fh):
         options = (date,[iyear, iyear+4], [imonth, imonth+2],[imonth+3, imonth+5]) 
     return options
 
-def make_netcdf(nc_fn,basin,dataset,template,cutline,step='month',**kwargs):
-    '''
-    filename: str
-        output netCDF file name
-    dataset:
-        {'P'        : [r'F:\Exercise\1.4\Monthly\L1_PCP_M',
-                               ('time','latitude', 'longitude'), 
-                               {'units': 'mm/month', 'source': 'WaPOR', 
-                                'quantity':'P','period':'month'}]}
-    template: str
-        file handler to template raster
-    cutline: str
-        file handler to shapefile
-    DTindex: object
-        pandas DatetimeIndex range
-    '''
-    dims = {'time':  None, 'latitude': None, 'longitude': None}
-    dims['latitude'], dims['longitude'], optionsProj, optionsClip = get_lats_lons(template, cutline)
-    _init_nc(nc_fn, dims, dataset, attr = {"basin_name" : basin})
-    overview=_make_overview(dataset, step)
-    succes = _fill_data_to_nc(nc_fn, overview, optionsProj, optionsClip, cutline)
-    return succes
-
-def _init_nc(nc_file, dim, var, fill = -9999., attr = None):
-    # Create new nc-file. Existing nc-file is overwritten.
-    out_nc = netCDF4.Dataset(nc_file, 'w', format='NETCDF4')
-    
-    # Add dimensions to nc-file.
-    for name, values in dim.items():
-        # Create limited dimensions.
-        if values is not None:
-            out_nc.createDimension(name, values.size)
-            vals = out_nc.createVariable(name, 'f4', (name,), fill_value = fill)
-            vals[:] = values
-        # Create unlimited dimensions.
-        else:
-            out_nc.createDimension(name, None)
-            vals = out_nc.createVariable(name, 'f4', (name,), fill_value = fill)
-            vals.calendar = 'standard'
-            vals.units = 'days since 1970-01-01 00:00'
-    
-    # Create variables.
-    for name, props in var.items():
-        vals = out_nc.createVariable(props[2]['quantity'], 'f4', props[1], zlib = True, 
-                                     fill_value = fill, complevel = 9, 
-                                     least_significant_digit = 3)
-        vals.setncatts(props[2])
-
-
-    if attr != None:
-        out_nc.setncatts(attr)
-
-    # Close nc-file.
-    out_nc.close()
-    
 def get_lats_lons(example, shape):
    
     gdal.UseExceptions()
@@ -193,6 +138,62 @@ def get_lats_lons(example, shape):
                                )
     
     return lats, lons, optionsProj, optionsClip
+
+def make_netcdf(nc_fn,basin,dataset,template,cutline,step='month',**kwargs):
+    '''
+    filename: str
+        output netCDF file name
+    dataset:
+        {'P'        : [r'F:\Exercise\1.4\Monthly\L1_PCP_M',
+                               ('time','latitude', 'longitude'), 
+                               {'units': 'mm/month', 'source': 'WaPOR', 
+                                'quantity':'P','period':'month'}]}
+    template: str
+        file handler to template raster
+    cutline: str
+        file handler to shapefile
+    DTindex: object
+        pandas DatetimeIndex range
+    '''
+    dims = {'time':  None, 'latitude': None, 'longitude': None}
+    dims['latitude'], dims['longitude'], optionsProj, optionsClip = get_lats_lons(template, cutline)
+    _init_nc(nc_fn, dims, dataset, attr = {"basin_name" : basin})
+    overview=_make_overview(dataset, step)
+    succes = _fill_data_to_nc(nc_fn, overview, optionsProj, optionsClip, cutline)
+    return succes
+
+def _init_nc(nc_file, dim, var, fill = -9999., attr = None):
+    # Create new nc-file. Existing nc-file is overwritten.
+    out_nc = netCDF4.Dataset(nc_file, 'w', format='NETCDF4')
+    
+    # Add dimensions to nc-file.
+    for name, values in dim.items():
+        # Create limited dimensions.
+        if values is not None:
+            out_nc.createDimension(name, values.size)
+            vals = out_nc.createVariable(name, 'f4', (name,), fill_value = fill)
+            vals[:] = values
+        # Create unlimited dimensions.
+        else:
+            out_nc.createDimension(name, None)
+            vals = out_nc.createVariable(name, 'f4', (name,), fill_value = fill)
+            vals.calendar = 'standard'
+            vals.units = 'days since 1970-01-01 00:00'
+    
+    # Create variables.
+    for name, props in var.items():
+        vals = out_nc.createVariable(props[2]['quantity'], 'f4', props[1], zlib = True, 
+                                     fill_value = fill, complevel = 9, 
+                                     least_significant_digit = 3)
+        vals.setncatts(props[2])
+
+
+    if attr != None:
+        out_nc.setncatts(attr)
+
+    # Close nc-file.
+    out_nc.close()
+    
 
 def _fill_data_to_nc(nc_file, overview, optionsProj, optionsClip, shape):
 
