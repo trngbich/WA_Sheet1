@@ -376,7 +376,8 @@ def __select_files(folder, possible_formats = ['.tif', '.zip', '.gz', '.nc']):
     returned extension is chosen arbitraraly (and a message is printed).
     """
     search = os.path.join(folder, "*")
-    formats = np.unique([os.path.splitext(x)[1] for x in glob.glob(search)], return_counts = True)
+    fhs=sorted(glob.glob(search))
+    formats = np.unique([os.path.splitext(x)[1] for x in fhs], return_counts = True)
     
     maxi = np.max([y for x, y in zip(formats[0], formats[1]) if x in possible_formats])
     
@@ -384,8 +385,8 @@ def __select_files(folder, possible_formats = ['.tif', '.zip', '.gz', '.nc']):
     if form.size > 1:
         print("Multiple valid file-formats in folder ('{0}'), selecting {1}-files only.".format(folder, form[0]))
     form = "*" + form[0]
-
-    return glob.glob(os.path.join(folder, form)), form[1:]
+    out_fhs=sorted(glob.glob(os.path.join(folder, form)))
+    return out_fhs, form[1:]
 
 def __ungz(path):
     with gzip.open(path, 'rb') as f_in:

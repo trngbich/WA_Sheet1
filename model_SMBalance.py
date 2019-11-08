@@ -242,7 +242,8 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
  
     '''
     warnings.filterwarnings("ignore", message='invalid value encountered in greater')
-    warnings.filterwarnings("ignore", message='invalid value encountered in true_divide')
+    warnings.filterwarnings("ignore", message='divide by zero encountered in true_divide')
+    
     start_time=datetime.datetime.now()
     
     Pt,_=open_nc(p_in,chunksize=1000)
