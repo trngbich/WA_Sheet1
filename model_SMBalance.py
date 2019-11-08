@@ -363,10 +363,10 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
         del etb
 
         elapsed_time=datetime.datetime.now()-start_time
-        print('Model finished in ',elapsed_time)
-        print('ETincr folder: ',etincr_outfolder)
-        print('ETrain folder: ',etrain_outfolder)
-    
+        print('Model finished in ',elapsed_time)        
+        print('Output1 ETrain folder: ',etrain_outfolder)
+        print('Output2 ETincr folder: ',etincr_outfolder)
+        return etrain_outfolder,etincr_outfolder
         
 def merge_yearly_nc(nc_folder,out_nc,varname=None):    
     fhs=glob.glob(os.path.join(nc_folder,'*.nc'))
