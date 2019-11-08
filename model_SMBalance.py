@@ -10,6 +10,8 @@ import gdal
 import xarray as xr
 import glob
 import datetime
+import warnings
+
 
 #%% functions
 def open_nc(nc,timechunk=1,chunksize=1000):
@@ -239,6 +241,8 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     cf =  20 #f_Ssat soil mositure correction factor to componsate the variation in filling up and drying in a month
  
     '''
+    warnings.filterwarnings("ignore", message='invalid value encountered in greater')
+    warnings.filterwarnings("ignore", message='invalid value encountered in true_divide')
     start_time=datetime.datetime.now()
     
     Pt,_=open_nc(p_in,chunksize=1000)
@@ -362,11 +366,11 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
         del etg
         del etb
 
-        elapsed_time=datetime.datetime.now()-start_time
-        print('Model finished in ',elapsed_time)        
-        print('Output1 ETrain folder: ',etrain_outfolder)
-        print('Output2 ETincr folder: ',etincr_outfolder)
-        return etrain_outfolder,etincr_outfolder
+    elapsed_time=datetime.datetime.now()-start_time
+    print('Model finished in ',elapsed_time)        
+    print('Output1 ETrain folder: ',etrain_outfolder)
+    print('Output2 ETincr folder: ',etincr_outfolder)
+    return etrain_outfolder,etincr_outfolder
         
 def merge_yearly_nc(nc_folder,out_nc,varname=None):    
     fhs=glob.glob(os.path.join(nc_folder,'*.nc'))
