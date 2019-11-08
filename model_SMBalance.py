@@ -373,8 +373,8 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     print('Output2 ETincr folder: ',etincr_outfolder)
     return etrain_outfolder,etincr_outfolder
         
-def merge_yearly_nc(nc_folder,out_nc,varname=None):    
-    fhs=glob.glob(os.path.join(nc_folder,'*.nc'))
+def merge_yearly_nc(nc_folder,out_nc,varname=None):     
+    fhs=sorted(glob.glob(os.path.join(nc_folder,'*.nc')))
     arr_list=[]
     for fh in fhs:
         arr,key=open_nc(fh)
