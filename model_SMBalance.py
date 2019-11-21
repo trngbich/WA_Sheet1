@@ -14,45 +14,62 @@ import warnings
 
 
 #%% functions
-def open_nc(nc,timechunk=1,chunksize=1000):
+def open_nc(nc,timechunk=-1,chunksize=1000):
     dts=xr.open_dataset(nc)
     key=list(dts.keys())[0]
     var=dts[key].chunk({"time": timechunk, "latitude": chunksize, "longitude": chunksize}) #.ffill("time")
     return var,key
 
-def calc_SM_bucket(P,ETa,I,SMmax,SMgt_1,SMincrt_1,f_consumed):
-    SMt_1=SMgt_1+SMincrt_1
-    ETr=np.where(I>0,ETa-I, ETa)
-    SMtemp=SMgt_1+np.maximum(P-I,P*0)
-    SMg=np.where(SMtemp-ETr>0,SMtemp-ETr,P*0)
-    ETincr=np.where(SMtemp-ETr>0,P*0,ETr-SMtemp)
-    Qsupply=np.where(ETincr>SMincrt_1,(ETincr-SMincrt_1)/f_consumed, P*0) 
+# def SM_bucket(P,ETa,I,SMmax,SMgt_1,SMincrt_1,f_consumed):
+#     SMt_1=SMgt_1+SMincrt_1
+#     ETr=np.where(I>0,ETa-I, ETa)
+#     SMtemp=SMgt_1+np.maximum(P-I,P*0)
+#     SMg=np.where(SMtemp-ETr>0,SMtemp-ETr,P*0)
+#     ETincr=np.where(SMtemp-ETr>0,P*0,ETr-SMtemp)
+#     Qsupply=np.where(ETincr>SMincrt_1,(ETincr-SMincrt_1)/f_consumed, P*0) 
             
-    #SMincr=np.where(ETincr>SMincrt_1,SMincrt_1+Qsupply-ETincr,SMincrt_1-ETincr)
-    SMincr=SMincrt_1+Qsupply-ETincr
-    SMincr=np.where(SMg+SMincr>SMmax,SMincr-SMincr/(SMg+SMincr)*((SMg+SMincr)-SMmax),SMincr)     
-    SMg=np.where(SMg+SMincr>SMmax,(SMg-SMg/(SMg+SMincr)*((SMg+SMincr)-SMmax)),SMg)
+#     #SMincr=np.where(ETincr>SMincrt_1,SMincrt_1+Qsupply-ETincr,SMincrt_1-ETincr)
+#     SMincr=SMincrt_1+Qsupply-ETincr
+#     SMincr=np.where(SMg+SMincr>SMmax,SMincr-SMincr/(SMg+SMincr)*((SMg+SMincr)-SMmax),SMincr)     
+#     SMg=np.where(SMg+SMincr>SMmax,(SMg-SMg/(SMg+SMincr)*((SMg+SMincr)-SMmax)),SMg)
     
-    #SMincr=np.where(SMg+SMincr>SMmax,SMincr-((SMg+SMincr)-SMmax),SMincr)
-    SM=np.where(SMg+SMincr>SMmax,SMmax,SMg+SMincr)
+#     #SMincr=np.where(SMg+SMincr>SMmax,SMincr-((SMg+SMincr)-SMmax),SMincr)
+#     SM=np.where(SMg+SMincr>SMmax,SMmax,SMg+SMincr)
+#     dsm=SM-SMt_1
+#     ETg=ETa-ETincr
+#     return SMg,SMincr,SM,dsm,Qsupply,ETincr,ETg
+    
+def SM_bucket(P,ETa,I,SMmax,SMgt_1,SMincrt_1,f_consumed):
+    SMt_1=SMgt_1+SMincrt_1
+    ETr=(ETa-I).where(I>0,ETa) 
+    SMtemp=SMgt_1+xr.ufuncs.maximum(P-I,P*0) #or SMgt_1+np.maximum(P-I,P*0)
+    SMg=(SMtemp-ETr).where(SMtemp-ETr>0,P*0) 
+    ETincr= (P*0).where(SMtemp-ETr>0,ETr-SMtemp) 
+    Qsupply=((ETincr-SMincrt_1)/f_consumed).where(ETincr>SMincrt_1,P*0)        
+    SMincr=SMincrt_1+Qsupply-ETincr
+    SMincr=(SMincr-SMincr/(SMg+SMincr)*((SMg+SMincr)-SMmax)).where(SMg+SMincr>SMmax,SMincr)     
+    SMg=((SMg-SMg/(SMg+SMincr)*((SMg+SMincr)-SMmax))).where(SMg+SMincr>SMmax,SMg)
+    SM=SMmax.where(SMg+SMincr>SMmax,SMg+SMincr)
     dsm=SM-SMt_1
     ETg=ETa-ETincr
     return SMg,SMincr,SM,dsm,Qsupply,ETincr,ETg
 
-def calc_SCS_SRO(P,I,SMmax,SM,Qsupply, cf):    
-    '''
-    SCS formula
-    '''
-    SM=np.where(SM>SMmax,SMmax,SM)        
-    SRO= np.where((P-I+Qsupply)>0,((P-I+Qsupply)**2)/(P-I+Qsupply+cf*(SMmax-SM)),P*0)
-    SROg= np.where(P-I>0,((P-I)**2)/(P-I+cf*(SMmax-SM)),P*0)
+# def SCS_calc_SRO(P,I,SMmax,SM,Qsupply, cf):    
+#     SM=np.where(SM>SMmax,SMmax,SM)        
+#     SRO= np.where((P-I+Qsupply)>0,((P-I+Qsupply)**2)/(P-I+Qsupply+cf*(SMmax-SM)),P*0)
+#     SROg= np.where(P-I>0,((P-I)**2)/(P-I+cf*(SMmax-SM)),P*0)
+#     SROincr=SRO-SROg
+#     return SRO,SROincr
+
+def SCS_calc_SRO(P,I,SMmax,SM,Qsupply, cf):    
+    SM=SMmax.where(SM>SMmax,SM)        
+    SRO= (((P-I+Qsupply)**2)/(P-I+Qsupply+cf*(SMmax-SM))).where((P-I+Qsupply)>0,P*0)
+    SROg= (((P-I)**2)/(P-I+cf*(SMmax-SM))).where(P-I>0,P*0)
     SROincr=SRO-SROg
     return SRO,SROincr
 
 def get_rootdepth(version = '1.0'):
-    '''
-    rootdepth lookup table
-    '''
+    
     lcc_code = dict()
     lcc_code['1.0'] = {
        'Shrubland':20,
@@ -113,20 +130,31 @@ def get_rootdepth(version = '1.0'):
     
     return lcc_code[version], root_depth[version]
 
-def calc_rootdepth(lu):
-    rootdepth=np.copy(lu)
+# def root_dpeth(lu):
+#     rootdepth=np.copy(lu)
+#     lu_categories, root_depth = get_rootdepth(version = '1.0')
+#     for key in root_depth.keys():
+#         mask = np.logical_or.reduce([lu == lu_categories[key]])
+#         rd = root_depth[key]
+#         rootdepth[mask] = rd
+#     return rootdepth 
+
+def root_dpeth(lu):
+    rootdepth=lu.copy()
+    rootdepth.name='Root depth'
+    rootdepth.attrs={'units':'mm',
+                    'quantity':'Effective root depth',
+                    'source':'Root depth lookup table',
+                    'period':'year'}
     lu_categories, root_depth = get_rootdepth(version = '1.0')
     for key in root_depth.keys():
-        mask = np.logical_or.reduce([lu == lu_categories[key]])
-        rd = root_depth[key]
-        rootdepth[mask] = rd
+      lu_code=lu_categories[key]
+      rd = root_depth[key]
+      rootdepth=rootdepth.where(lu!=lu_code,rd)
     return rootdepth 
 
 
 def get_fractions(version = '1.0'):
-    '''
-    consumed fraction lookup table
-    '''
     consumed_fractions = dict()
     
     consumed_fractions['1.0'] = {
@@ -171,14 +199,29 @@ def get_fractions(version = '1.0'):
     
     return consumed_fractions[version]
 
-def calc_consumed_fraction(lu):
-    f_consumed=np.copy(lu)
+# def Consumed_fraction(lu):
+#     f_consumed=np.copy(lu)
+#     consumed_fractions = get_fractions(version = '1.0')
+#     lu_categories, root_depth = get_rootdepth(version = '1.0')
+#     for key in consumed_fractions.keys():
+#         mask = np.logical_or.reduce([lu == lu_categories[key]])
+#         consumed_fraction = consumed_fractions[key]
+#         f_consumed[mask] = consumed_fraction
+#     return f_consumed 
+
+def Consumed_fraction(lu):
+    f_consumed=lu.copy()
+    f_consumed.name='Consumed fraction'
+    f_consumed.attrs={'units':'Fraction',
+                    'quantity':'Consumed fraction',
+                    'source':'Consumed fraction look-up table',
+                    'period':'year'}
     consumed_fractions = get_fractions(version = '1.0')
     lu_categories, root_depth = get_rootdepth(version = '1.0')
     for key in consumed_fractions.keys():
-        mask = np.logical_or.reduce([lu == lu_categories[key]])
+        lu_code=lu_categories[key]
         consumed_fraction = consumed_fractions[key]
-        f_consumed[mask] = consumed_fraction
+        f_consumed = f_consumed.where(lu!=lu_code,consumed_fraction)
     return f_consumed 
 
 def OpenAsArray(fh, bandnumber = 1, dtype = 'float32', nan_values = False):
@@ -221,7 +264,8 @@ def OpenAsArray(fh, bandnumber = 1, dtype = 'float32', nan_values = False):
 
 #%% main
 def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
-         start_year=2009,f_perc=1,f_Smax=0.9, cf =  20):
+         start_year=2009,f_perc=1,f_Smax=0.9, cf =  20,
+         chunk=[-1,1000]):
     '''
     Arguments:
         
@@ -248,28 +292,35 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     
     start_time=datetime.datetime.now()
     
-    Pt,_=open_nc(p_in,chunksize=1000)
-    E,_=open_nc(e_in,chunksize=1000)
-    Int,_=open_nc(i_in,chunksize=1000)
-    nRD,_=open_nc(rd_in,chunksize=1000)
-    LU,_=open_nc(lu_in,chunksize=1000)
+    Pt,_=open_nc(p_in)
+    E,_=open_nc(e_in,timechunk=chunk[0],chunksize=chunk[1])
+    Int,_=open_nc(i_in,timechunk=chunk[0],chunksize=chunk[1])
+    nRD,_=open_nc(rd_in,timechunk=chunk[0],chunksize=chunk[1])
+    LU,_=open_nc(lu_in,timechunk=chunk[0],chunksize=chunk[1])
     
     ##read saturation file
-    thetasat = OpenAsArray(smsat_file,nan_values=True)    
+    thetasat_data=OpenAsArray(smsat_file,nan_values=True)
+    thetasat=xr.DataArray(thetasat_data, coords = {"latitude": Pt.latitude,
+                                                   "longitude":Pt.longitude}, 
+                          dims = ["latitude", "longitude"])
+    del thetasat_data
+    
     nrd = nRD.where(nRD!=0,1)
-     
+    
     SMg=E[0]*0
     SMincr=E[0]*0
-    
+    etb = E*0
+    etg = E*0
+    arr_list_etb=[]
+    arr_list_etg=[]
     for j in range(len(LU.time)): 
         t1 = j*12
         t2 = (j+1)*12    
-        etb = np.zeros((12,E[0].shape[0],E[0].shape[1]))
-        etg = np.zeros((12,E[0].shape[0],E[0].shape[1]))
-        lu = LU.isel(time=j).values
-        Rd = calc_rootdepth(lu)
+       
+        lu = LU.isel(time=j)
+        Rd = root_dpeth(lu)
         SMmax=thetasat*Rd    
-        f_consumed = calc_consumed_fraction(lu)    
+        f_consumed = Consumed_fraction(lu)    
         for t in range(t1,t2):
             print('time: ', t)
             if t==0:
@@ -279,117 +330,99 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
             else:
                 SMgt_1=SMg 
                 SMincrt_1=SMincr 
-                
-            p = Pt.isel(time=t).values
-            e = E.isel(time=t).values
-            i = Int.isel(time=t).values
-            NRD = nrd.isel(time=t).values
+             
+             
+            p = Pt.isel(time=t)
+            e = E.isel(time=t)
+            i = Int.isel(time=t)
+            NRD = nrd.isel(time=t)
+            
             P = p/NRD
             ETa = e/NRD
             I = i/NRD
             
             ### Step 1: Soil moisture
-            SMg,SMincr,SM,dsm,Qsupply,ETincr,ETg=calc_SM_bucket(P,ETa,I,SMmax,
-                                                                SMgt_1,SMincrt_1,
-                                                                f_consumed) 
+            SMg,SMincr,SM,dsm,Qsupply,ETincr,ETg=SM_bucket(P,ETa,I,SMmax,SMgt_1,SMincrt_1,f_consumed) 
             
-            SRO,SROincr=calc_SCS_SRO(P,I,SMmax,SM,Qsupply,cf)        
+            SRO,SROincr=SCS_calc_SRO(P,I,SMmax,SM,Qsupply,cf)        
             ### Step 3: Percolation       
            
                    
-            perc=np.where(SM>f_Smax*SMmax,SM*(np.exp(-f_perc/SM)),P*0)
-            SMincr = np.where(SMincr-SROincr*NRD>0,SMincr-SROincr*NRD,P*0)
-            SMg_ratio = np.where(SM==0,1,SMg/SM)
-            SMincr_ratio = np.where(SM==0,1,SMincr/SM)
+            perc=(SM*(np.exp(-f_perc/SM))).where(SM>f_Smax*SMmax,P*0)
+            SMincr = (SMincr-SROincr*NRD).where(SMincr-SROincr*NRD>0,P*0)
+            SMg_ratio = (SM*0+1).where(SM==0,SMg/SM)
+            SMincr_ratio = (SM*0+1).where(SM==0,SMincr/SM)
             perc_green = perc*SMg_ratio
             perc_incr = perc*SMincr_ratio
-            perc_green = np.where(SMg>perc_green, perc_green, SMg*0)
-            perc_incr = np.where(SMincr>perc*SMincr_ratio, perc_incr, SMincr*0)
+            perc_green = perc_green.where(SMg>perc_green, SMg*0)
+            perc_incr = perc_incr.where(SMincr>perc*SMincr_ratio, SMincr*0)
             
-            SMg = np.where(SMg-perc_green>0, SMg-perc_green, P*0)
-            SMincr = np.where(SMincr-perc_incr >0, SMincr-perc_incr, P*0)
+            SMg = (SMg-perc_green).where(SMg-perc_green>0, P*0)
+            SMincr = (SMincr-perc_incr).where(SMincr-perc_incr >0,P*0)
             
             ###updating the soil moisture by subtracting the surface runoff
             SROg=SRO-SROincr
-            SMg=np.where(SMg-SROg>0,SMg-SROg,SMg*0)
-            SMincr=np.where(SMincr-SROincr>0,SMincr-SROincr,SMincr*0)
+            SMg=(SMg-SROg).where(SMg-SROg>0,SMg*0)
+            SMincr=(SMincr-SROincr).where(SMincr-SROincr>0,SMincr*0)
     
             SM = SMg+SMincr
             
             ### Step 5: Store monthly data of the year
-            k = int(t-(j*12))
-            etb[k,:,:] = ETincr*NRD
-            etg[k,:,:] = ETg*NRD
+#            k = int(t-(j*12))
+            arr_list_etb.append(ETincr*NRD)
+            arr_list_etg.append(ETg*NRD)
             
-            del p
-            del ETa
-            del I
-            del NRD
-            del SMgt_1 
-            del Qsupply 
-            del SMincrt_1
-            
-        year = start_year+j    
-        time_ds = E.time[t1:t2]
-        ds = xr.Dataset({})
-        ds['etincr'] = (('time','latitude', 'longitude'), etb)
-        ds['etrain'] = (('time','latitude', 'longitude'), etg)
-        ds = ds.assign_coords(time = time_ds, latitude=E.latitude,longitude=E.longitude )
-        
-        ##rainfall ET data
-        et_rain = ds.etrain
-        attrs={"units":"mm/month", "source": "SM Balance model", 
-               "quantity":"ET rainfall"}
-        et_rain.assign_attrs(attrs)
-        et_rain.name = "etrain"
-        et_rain_dts=et_rain.chunk({"latitude":-1,"longitude":-1}).to_dataset()
-        etrain_outfolder=os.path.join(MAIN_FOLDER,'etrain')
-        if not os.path.exists(etrain_outfolder):
-          os.makedirs(etrain_outfolder)
-        nc_fn=r'et_rain_monthly_'+str(year)+'.nc'
-        nc_path=os.path.join(etrain_outfolder,nc_fn)
-        comp = dict(zlib=True, complevel=9, least_significant_digit=3)
-        encoding = {"etrain": comp}
-        et_rain_dts.to_netcdf(nc_path,encoding=encoding)
-        
-        ##Incremental ET data
-        et_incr = ds.etincr
-        attrs={"units":"mm/month", "source": "SM Balance model", 
-               "quantity":"ET incremental"}
-        et_incr.assign_attrs(attrs)
-        et_incr.name = "etincr"
-        et_incr_dts=et_incr.chunk({"latitude":-1,"longitude":-1}).to_dataset()
-        etincr_outfolder=os.path.join(MAIN_FOLDER,'etincr')
-        if not os.path.exists(etincr_outfolder):
-          os.makedirs(etincr_outfolder)
-        nc_fn=r'et_incr_monthly_'+str(year)+'.nc'
-        nc_path=os.path.join(etincr_outfolder,nc_fn)
-        et_incr_dts.to_netcdf(nc_path,encoding={"etincr":{'zlib':True}})
-        
-        del etg
-        del etb
-
-    elapsed_time=datetime.datetime.now()-start_time
-    print('Model finished in ',elapsed_time)        
-    print('Output1 ETrain folder: ',etrain_outfolder)
-    print('Output2 ETincr folder: ',etincr_outfolder)
-    return etrain_outfolder,etincr_outfolder
-        
-def merge_yearly_nc(nc_folder,out_nc,varname=None):     
-    fhs=sorted(glob.glob(os.path.join(nc_folder,'*.nc')))
-    arr_list=[]
-    for fh in fhs:
-        arr,key=open_nc(fh)
-        arr_list.append(arr)
-    var=xr.concat(arr_list, dim='time')
-    if varname is None:
-        varname=key
-    attrs={"units":"mm/month", "source": "Merged yearly netCDF files    from {0}".format(nc_folder), "quantity":varname}
-    var.assign_attrs(attrs)
-    dts=var.chunk({"latitude":-1,"longitude":-1}).to_dataset()  
-    comp = dict(zlib=True, complevel=9, least_significant_digit=3)
-    encoding = {key: comp}
-    dts.to_netcdf(out_nc,encoding=encoding)
-    print('Finish merging ',out_nc)
+    etb=xr.concat(arr_list_etb, dim='time')  
+    etg=xr.concat(arr_list_etg, dim='time')    
+    #year = start_year+j    
+    #time_ds = E.time[t1:t2]
+    #ds = xr.Dataset({})
+    #ds['etb'] = (('time','latitude', 'longitude'), etb)
+    #ds['etg'] = (('time','latitude', 'longitude'), etg)
+    #ds = ds.assign_coords(time = E.time, latitude=E.latitude,longitude=E.longitude )
     
+    
+    ###green ET datase
+    #et_g = ds.etg
+    attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Rainfall_ET_M"}
+    etg.assign_attrs(attrs)
+    etg.name = "Rainfall_ET_M"
+    etg_dts=etg.chunk({"latitude":-1,"longitude":-1}).to_dataset()
+    nc_fn=r'et_g_monthly.nc'
+    nc_path=os.path.join(MAIN_FOLDER,nc_fn)
+    comp = dict(zlib=True, complevel=9, least_significant_digit=3)
+    encoding = {"Rainfall_ET_M": comp}
+    etg_dts.to_netcdf(nc_path,encoding=encoding)
+    #
+
+    ###Blue ET datase
+    #et_b = ds.etb
+    attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Increamental_ET_M"}
+    etb.assign_attrs(attrs)
+    etb.name = "Increamental_ET_M"
+    etb_dts=etb.chunk({"latitude":-1,"longitude":-1}).to_dataset()
+    nc_fn=r'et_b_monthly.nc'
+    nc_path=os.path.join(MAIN_FOLDER,nc_fn)
+    etb_dts.to_netcdf(nc_path,encoding={"Increamental_ET_M":{'zlib':True}})
+    #
+    #del etb
+    #del etg
+        
+#def merge_yearly_nc(nc_folder,out_nc,varname=None):     
+#    fhs=sorted(glob.glob(os.path.join(nc_folder,'*.nc')))
+#    arr_list=[]
+#    for fh in fhs:
+#        arr,key=open_nc(fh)
+#        arr_list.append(arr)
+#    var=xr.concat(arr_list, dim='time')
+#    if varname is None:
+#        varname=key
+#    attrs={"units":"mm/month", "source": "Merged yearly netCDF files    from {0}".format(nc_folder), "quantity":varname}
+#    var.assign_attrs(attrs)
+#    dts=var.chunk({"latitude":-1,"longitude":-1}).to_dataset()  
+#    comp = dict(zlib=True, complevel=9, least_significant_digit=3)
+#    encoding = {key: comp}
+#    dts.to_netcdf(out_nc,encoding=encoding)
+#    print('Finish merging ',out_nc)
+#    
         
