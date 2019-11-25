@@ -290,8 +290,7 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     warnings.filterwarnings("ignore", message='invalid value encountered in true_divide')
     warnings.filterwarnings("ignore", message='overflow encountered in exp')
     
-    start_time=datetime.datetime.now()
-    
+        
     Pt,_=open_nc(p_in)
     E,_=open_nc(e_in,timechunk=chunk[0],chunksize=chunk[1])
     Int,_=open_nc(i_in,timechunk=chunk[0],chunksize=chunk[1])
@@ -348,7 +347,7 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
             ### Step 3: Percolation       
            
                    
-            perc=(SM*(np.exp(-f_perc/SM))).where(SM>f_Smax*SMmax,P*0)
+            perc=(SM*xr.ufuncs.exp(-f_perc/SM))).where(SM>f_Smax*SMmax,P*0)
             SMincr = (SMincr-SROincr*NRD).where(SMincr-SROincr*NRD>0,P*0)
             SMg_ratio = (SM*0+1).where(SM==0,SMg/SM)
             SMincr_ratio = (SM*0+1).where(SM==0,SMincr/SM)
