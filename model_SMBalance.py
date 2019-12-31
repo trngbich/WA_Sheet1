@@ -15,7 +15,14 @@ import time
 
 
 #%%
-def open_nc(nc,timechunk=-1,chunksize=1000):
+import os
+import numpy as np
+import gdal
+import xarray as xr
+import time
+
+#%%
+def open_nc(nc,timechunk=1,chunksize=1000):
     dts=xr.open_dataset(nc)
     key=list(dts.keys())[0]
     var=dts[key].chunk({"time": timechunk, "latitude": chunksize, "longitude": chunksize}) #.ffill("time")
@@ -88,7 +95,7 @@ def get_rootdepth(version = '1.0'):
     return lcc_code[version], root_depth[version]
 
 
-def root_depth(lu):
+def root_dpeth(lu):
     rootdepth=lu.copy()
     rootdepth.name='Root depth'
     rootdepth.attrs={'units':'mm',
@@ -189,11 +196,10 @@ def OpenAsArray(fh, bandnumber = 1, dtype = 'float32', nan_values = False):
     return Array
 
 
-
 #%% main
 def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
          start_year=2009,f_perc=1,f_Smax=0.9, cf =  20,
-         chunk=[-1,1000]):
+         chunks=[1,1000,1000]):
     '''
     Arguments:
         
@@ -217,35 +223,40 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
     warnings.filterwarnings("ignore", message='divide by zero encountered in true_divide')
     warnings.filterwarnings("ignore", message='invalid value encountered in true_divide')
     warnings.filterwarnings("ignore", message='overflow encountered in exp')
-    start=time.time()
-        
-    Pt,_=open_nc(p_in)
-    E,_=open_nc(e_in,timechunk=chunk[0],chunksize=chunk[1])
-    Int,_=open_nc(i_in,timechunk=chunk[0],chunksize=chunk[1])
-    nRD,_=open_nc(rd_in,timechunk=chunk[0],chunksize=chunk[1])
-    LU,_=open_nc(lu_in,timechunk=chunk[0],chunksize=chunk[1])
-    
-    ##read saturation file
+
+    tchunk=chunks[0]
+    chunk=chunks[1]
+    Pt,key=open_nc(p_in,timechunk=tchunk,chunksize=chunk)
+    E,key=open_nc(e_in,timechunk=tchunk,chunksize=chunk)
+    Int,key=open_nc(i_in,timechunk=tchunk,chunksize=chunk)
+    nRD,key=open_nc(rd_in,timechunk=tchunk,chunksize=chunk)
+    LU,key=open_nc(lu_in,timechunk=tchunk,chunksize=chunk)
+#    thetasat=xr.open_dataset(thetasat_in).thetasat.chunk({'latitude':chunk,'longitude':chunk})
+    ### Get thetasat DataArray from tiff
     thetasat_data=OpenAsArray(smsat_file,nan_values=True)
-    thetasat=xr.DataArray(thetasat_data, 
-                          coords = {"latitude": Pt.latitude,                                                   
-                                    "longitude":Pt.longitude}, 
-                          dims = ["latitude", "longitude"])
-    del thetasat_data
+    thetasat=xr.DataArray(thetasat_data, coords = {"latitude": Pt.latitude,
+                                                    "longitude":Pt.longitude}, 
+                           dims = ["latitude", "longitude"])
+    thetasat=thetasat.chunk({"latitude": chunk, "longitude": chunk}) #.ffill("time")
     
-    nrd = nRD.where(nRD!=0,1)
+    # del thetasat_data
     
+    ### convert nRD = 0 to 1
+    nRD = nRD.where(nRD!=0,1)
+    
+    ### Create 
     SM=E[0]*0
-    etb = E*0
-    etg = E*0
-    arr_list_etb=[]
-    arr_list_etg=[]
+    
     for j in range(len(LU.time)): 
         t1 = j*12
         t2 = (j+1)*12    
        
         lu = LU.isel(time=j)
-        Rd = root_depth(lu)
+        
+        #mask lu for water bodies
+        mask = xr.where(((lu==80) | (lu==81) | (lu==70) | (lu==200)), 1,np.nan)
+        
+        Rd = root_dpeth(lu)
         SMmax=thetasat*Rd    
         f_consumed = Consumed_fraction(lu)    
         for t in range(t1,t2):
@@ -254,7 +265,7 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
             P = Pt.isel(time=t)
             ETa = E.isel(time=t)
             I = Int.isel(time=t)
-            NRD = nrd.isel(time=t)
+            NRD = nRD.isel(time=t)
             
             ### calculate surface runoff  as a function of SMt_1
             SRO=SCS_calc_SRO(P,I,NRD,SMmax,SMt_1,cf)        
@@ -264,71 +275,70 @@ def run_SMBalance(MAIN_FOLDER,p_in,e_in,i_in,rd_in,lu_in,smsat_file,
                     
             ### Calculate SM temp
             Stemp = SMt_1+(P-I)-(ETa-I)-SRO-perc
-            Qof=(Stemp-SMmax).where(Stemp>SMmax,SMmax)
-            SRO=(SRO+Qof).where(Stemp>SMmax,SRO)
-            Stemp=SMmax.where(Stemp>SMmax,Stemp)
-    
+            
+            
             ### Calculate ETincr, ETrain, Qsupply, and update SM
             ETincr = (P*0).where(Stemp>=0, -1*Stemp)
+           
+            # adjust ETincr for water bodies
+            ETincr = (P*0).where(((mask==1) & (P-ETa >= 0)), 
+                      (ETa-P).where(((mask==1) & (P-ETa <0)), ETincr))
+            
             ETrain = ETa.where(Stemp>=0,ETa-ETincr)
             Qsupply = (P*0).where(Stemp>=0,ETincr/f_consumed)
             SM = Stemp.where(Stemp>=0,Stemp+Qsupply)
             
-            ### Calculate incremetal percolation and increamental runoff
+            ### Calculate increametal percolation and increamental runoff
             perc_incr = (SM-SMmax)*perc/(perc+SRO).where(SM>SMmax, P*0)
-            SROincr = (SM-SMmax-perc_incr).where(SM>SMmax, P*0)   		
-            overflow = SM-SMmax
-            SM=SM.where(SM<SMmax, SMmax)		
-            SRO=SRO+overflow.where(overflow>0, SRO)
+            SROincr = (SM-SMmax-perc_incr).where(SM>SMmax, P*0)
+    #        overflow = SM-SMmax # we don't use overflow at 
+            SM=SM.where(SM<SMmax, SMmax)
+    #        SRO=SRO+overflow.where(overflow>0, SRO)
+          
     
-            ### Store monthly data of the year
-            arr_list_etb.append(ETincr)
-            arr_list_etg.append(ETrain)
-            
+    
+            if t == 0:
+                etb = ETincr
+                etg = ETrain
+            else:
+                etb = xr.concat([etb, ETincr], dim='time')  
+                etg = xr.concat([etg, ETrain], dim='time')
+            attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Rainfall_ET_M"}
+            etg.attrs=attrs
+            etg.name = 'Rainfall_ET_M'
+    
+            attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Increamental_ET_M"}
+            etb.attrs=attrs
+            etb.name = 'Increamental_ET_M'
+    
+            ###
+#            timechunk = 1
+#            chunks = [timechunk,latchunk, lonchunk]
+            comp = dict(zlib=True, complevel=9, least_significant_digit=2, chunksizes=chunks)
+    
+    
+            ##green ET 
+            print("\n\nwriting the ET_rain netcdf file\n\n")
+            etg_outfolder=os.path.join(MAIN_FOLDER,'etg')
+            if not os.path.exists(etg_outfolder):
+              os.makedirs(etg_outfolder)
+            nc_fn=r'et_g_monthly_4.nc'
+            nc_path=os.path.join(etg_outfolder,nc_fn)
+            encoding = {"Rainfall_ET_M": comp}
+            etg.to_netcdf(nc_path,encoding=encoding)    
 
-    #        del SMincrt_1
-    etb=xr.concat(arr_list_etb, dim='time')  
-    etg=xr.concat(arr_list_etg, dim='time')    
-    #year = start_year+j    
-    #time_ds = E.time[t1:t2]
-    #ds = xr.Dataset({})
-    #ds['etb'] = (('time','latitude', 'longitude'), etb)
-    #ds['etg'] = (('time','latitude', 'longitude'), etg)
-    #ds = ds.assign_coords(time = E.time, latitude=E.latitude,longitude=E.longitude )
-    
-    
-    ###green ET datase
-    #et_g = ds.etg
-    attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Rainfall_ET_M"}
-    etg.assign_attrs(attrs)
-    etg.name = "Rainfall_ET_M"
-    etg_dts=etg.chunk({"latitude":-1,"longitude":-1}).to_dataset()
-    etg_outfolder=os.path.join(MAIN_FOLDER,'etg')
-    if not os.path.exists(etg_outfolder):
-      os.makedirs(etg_outfolder)
-    nc_fn=r'et_g_monthly.nc'
-    nc_path=os.path.join(etg_outfolder,nc_fn)
-    comp = dict(zlib=True, complevel=9, least_significant_digit=3)
-    encoding = {"Rainfall_ET_M": comp}
-    etg_dts.to_netcdf(nc_path,encoding=encoding)
-    #
-    ###Blue ET datase
-    #et_b = ds.etb
-    attrs={"units":"mm/month", "source": "FAO WaPOR", "quantity":"Incremental_ET_M"}
-    etb.assign_attrs(attrs)
-    etb.name = "Incremental_ET_M"
-    etb_dts=etb.chunk({"latitude":-1,"longitude":-1}).to_dataset()
-    etb_outfolder=os.path.join(MAIN_FOLDER,'etb')
-    if not os.path.exists(etb_outfolder):
-      os.makedirs(etb_outfolder)
-    nc_fn=r'et_b_monthly.nc'
-    nc_path=os.path.join(etb_outfolder,nc_fn)
-    etb_dts.to_netcdf(nc_path,encoding={"Incremental_ET_M":{'zlib':True}})
-    
-    end = time.time()
-    print(end - start)
-    #
-    #del etb
-    #del etg
+        del etg
+        #
+        ###Blue ET datase
+        print("\n\nwriting the ET_increamental netcdf file\n\n")
+        etb_outfolder=os.path.join(MAIN_FOLDER,'etb')
+        if not os.path.exists(etb_outfolder):
+          os.makedirs(etb_outfolder)
+        nc_fn=r'et_b_monthly_4.nc'
+        nc_path=os.path.join(etb_outfolder,nc_fn)
+        encoding = {"Increamental_ET_M": comp}
+        etb.to_netcdf(nc_path,encoding=encoding)
 
+        del etb
+        
         
